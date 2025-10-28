@@ -1,0 +1,15 @@
+beautifulsoup4
+decord
+ftfy
+imageio
+lerobot==0.3.2
+lmdb
+lpips
+opencv-python
+pytorch-fid
+scikit-image
+terminaltables
+torch
+torchvision
+transformers
+tyro
