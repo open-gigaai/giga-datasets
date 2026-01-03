@@ -27,7 +27,7 @@ GigaDatasets is a unified and lightweight framework for data curation, evaluatio
 
 ## ⚡ Installation
 
-Datasets can be installed from PyPi and has to be installed in a virtual environment (venv or conda for instance)
+GigaDatasets can be installed from PyPi and has to be installed in a virtual environment (venv or conda for instance)
 
 ```bash
 pip3 install giga-datasets
