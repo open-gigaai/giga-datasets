@@ -7,6 +7,43 @@ from tqdm import tqdm
 from ..utils import Timer
 
 
+def _get_data_worker_context() -> str:
+    env_names = (
+        'RANK',
+        'LOCAL_RANK',
+        'WORLD_SIZE',
+        'LOCAL_WORLD_SIZE',
+        'NODE_RANK',
+        'GROUP_RANK',
+        'ROLE_RANK',
+        'SLURM_PROCID',
+        'SLURM_NODEID',
+        'SLURM_LOCALID',
+    )
+    env_context = ', '.join(f'{name}={os.environ[name]}' for name in env_names if name in os.environ)
+    hostname = os.environ.get('HOSTNAME') or getattr(os.uname(), 'nodename', 'unknown')
+
+    worker_info = torch.utils.data.get_worker_info()
+    worker_context = 'worker=main' if worker_info is None else f'worker_id={worker_info.id}, num_workers={worker_info.num_workers}'
+
+    parts = [f'host={hostname}', f'pid={os.getpid()}', worker_context]
+    if env_context:
+        parts.append(env_context)
+    return ', '.join(parts)
+
+
+def _describe_dataset_for_error(dataset: Any) -> str:
+    parts = [dataset.__class__.__name__]
+    for attr_name in ('data_path', 'config_path', 'root'):
+        try:
+            attr_value = getattr(dataset, attr_name, None)
+        except Exception as error:
+            attr_value = f'<failed to read {attr_name}: {error}>'
+        if attr_value is not None:
+            parts.append(f'{attr_name}={attr_value!s}')
+    return ' '.join(parts)
+
+
 class BaseProcessor:
     """Base interface for streaming data post-processing.
 
@@ -183,14 +220,20 @@ class BaseDataset(torch.utils.data.Dataset):
         Returns:
             Any: The sample dict or a list of sample dicts after optional transform.
         """
-        self.open()
-        if isinstance(index, (list, tuple)):
-            data_dict = [self._get_data(idx) for idx in index]
-        else:
-            data_dict = self._get_data(index)
-        if self.transform is not None:
-            data_dict = self.transform(data_dict)
-        return data_dict
+        try:
+            self.open()
+            if isinstance(index, (list, tuple)):
+                data_dict = [self._get_data(idx) for idx in index]
+            else:
+                data_dict = self._get_data(index)
+            if self.transform is not None:
+                data_dict = self.transform(data_dict)
+            return data_dict
+        except Exception as error:
+            raise RuntimeError(
+                'Failed to fetch dataset sample: '
+                f'dataset={_describe_dataset_for_error(self)}, index={index!r}, {_get_data_worker_context()}'
+            ) from error
 
     def _get_data(self, index: int) -> Any:
         """Fetch raw data for a single index.

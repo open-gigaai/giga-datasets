@@ -1,9 +1,10 @@
+import bisect
 import logging
 import os
 from typing import Any
 
 from .. import utils
-from .base_dataset import BaseDataset
+from .base_dataset import BaseDataset, _describe_dataset_for_error, _get_data_worker_context
 
 DATASETS = dict()
 
@@ -104,7 +105,13 @@ def load_config(data_or_config: str | dict) -> dict:
         if 'data_path' not in config:
             config['data_path'] = os.path.dirname(config_path)
         else:
-            config['data_path'] = get_abs_path(config['data_path'])
+            config_data_path = config['data_path']
+            if isinstance(config_data_path, list):
+                config['data_path'] = [
+                    get_abs_path(path, os.path.dirname(config_path)) if isinstance(path, str) else path for path in config_data_path
+                ]
+            else:
+                config['data_path'] = get_abs_path(config_data_path)
     elif isinstance(data_or_config, dict):
         config = data_or_config
     else:
@@ -228,26 +235,46 @@ class Dataset(BaseDataset):
         return len(self.datasets[0])
 
     def __getitem__(self, index: int | list[int] | tuple[int, ...]) -> Any:
-        self.open()
-        if isinstance(index, (list, tuple)):
-            # Vectorized fetch: preserve order from the provided index list
-            data_dict = [self._get_data(idx) for idx in index]
-        else:
-            data_dict = self._get_data(index)
-        if self.transform is not None:
-            data_dict = self.transform(data_dict)
-        return data_dict
+        try:
+            self.open()
+            if isinstance(index, (list, tuple)):
+                # Vectorized fetch: preserve order from the provided index list
+                data_dict = [self._get_data(idx) for idx in index]
+            else:
+                data_dict = self._get_data(index)
+            if self.transform is not None:
+                data_dict = self.transform(data_dict)
+            return data_dict
+        except Exception as error:
+            raise RuntimeError(
+                'Failed to fetch merged dataset sample: '
+                f'dataset={_describe_dataset_for_error(self)}, index={index!r}, {_get_data_worker_context()}'
+            ) from error
 
     def _get_data(self, index: int) -> dict:
         # Start with primary dataset; it defines canonical indexing and may contain 'data_index'
-        data_dict = self.datasets[0][index]
+        try:
+            data_dict = self.datasets[0][index]
+        except Exception as error:
+            raise RuntimeError(
+                'Failed to fetch primary child dataset sample: '
+                f'child_index=0, child={_describe_dataset_for_error(self.datasets[0])}, '
+                f'parent_index={index!r}, {_get_data_worker_context()}'
+            ) from error
         if 'data_index' in data_dict:
             data_index = data_dict['data_index']
         else:
             data_index = index
         # Merge aligned records from the remaining datasets using the resolved data_index
         for i in range(1, len(self.datasets)):
-            data_dict.update(self.datasets[i][data_index])
+            try:
+                data_dict.update(self.datasets[i][data_index])
+            except Exception as error:
+                raise RuntimeError(
+                    'Failed to fetch aligned child dataset sample: '
+                    f'child_index={i}, child={_describe_dataset_for_error(self.datasets[i])}, '
+                    f'parent_index={index!r}, resolved_data_index={data_index!r}, {_get_data_worker_context()}'
+                ) from error
         return data_dict
 
 
@@ -263,6 +290,7 @@ class ConcatDataset(BaseDataset):
         super(ConcatDataset, self).__init__()
         assert len(datasets) > 0
         self.datasets = datasets
+        self._cumulative_sizes: list[int] | None = None
 
     @classmethod
     def load(cls, data_or_config_list: list[Any]) -> 'ConcatDataset':
@@ -278,12 +306,27 @@ class ConcatDataset(BaseDataset):
     def close(self) -> None:
         for dataset in self.datasets:
             dataset.close()
+        self._invalidate_index_cache()
         super(ConcatDataset, self).close()
 
     def reset(self) -> None:
         for dataset in self.datasets:
             dataset.reset()
+        self._invalidate_index_cache()
         super(ConcatDataset, self).reset()
+
+    def _invalidate_index_cache(self) -> None:
+        self._cumulative_sizes = None
+
+    def _get_cumulative_sizes(self) -> list[int]:
+        if self._cumulative_sizes is None:
+            cumulative_sizes = []
+            total_size = 0
+            for dataset in self.datasets:
+                total_size += len(dataset)
+                cumulative_sizes.append(total_size)
+            self._cumulative_sizes = cumulative_sizes
+        return self._cumulative_sizes
 
     def filter(self, mode: str, **kwargs: Any) -> None:
         """Filter each child dataset or perform an overall collection-level op.
@@ -311,15 +354,12 @@ class ConcatDataset(BaseDataset):
         else:
             for i, dataset in enumerate(self.datasets):
                 dataset.filter(mode=mode, dataset_index=i, **kwargs)
+        self._invalidate_index_cache()
 
     def __len__(self) -> int:
-        data_size = 0
-        for dataset in self.datasets:
-            data_size += len(dataset)
-        return data_size
+        return self._get_cumulative_sizes()[-1]
 
     def __getitem__(self, index: int | list[int] | tuple[int, ...]) -> Any:
-        self.open()
         if isinstance(index, (list, tuple)):
             data_dict = [self._get_data(idx) for idx in index]
         else:
@@ -329,10 +369,113 @@ class ConcatDataset(BaseDataset):
         return data_dict
 
     def _get_data(self, index: int) -> Any:
-        # Walk through sub-datasets until the index falls into one partition
-        for i, dataset in enumerate(self.datasets):
-            if index >= len(dataset):
-                index -= len(dataset)
-            else:
-                return dataset[index]
-        raise IndexError
+        cumulative_sizes = self._get_cumulative_sizes()
+        dataset_index = bisect.bisect_right(cumulative_sizes, index)
+        if dataset_index == len(cumulative_sizes):
+            raise IndexError
+        previous_size = 0 if dataset_index == 0 else cumulative_sizes[dataset_index - 1]
+        local_index = index - previous_size
+        child = self.datasets[dataset_index]
+        try:
+            return child[local_index]
+        except Exception as error:
+            raise RuntimeError(
+                'Failed to fetch concat child dataset sample: '
+                f'global_index={index!r}, child_index={dataset_index}, local_index={local_index!r}, '
+                f'child_start={previous_size}, child_end={cumulative_sizes[dataset_index]}, '
+                f'child={_describe_dataset_for_error(child)}, {_get_data_worker_context()}'
+            ) from error
+
+
+@register_dataset
+class WeightedConcatDataset(ConcatDataset):
+    """Concat dataset with explicit per-subdataset sampling weights.
+
+    This class keeps the same sample access behavior as ``ConcatDataset`` while
+    carrying ``sampling_weights`` metadata that can be consumed by custom
+    samplers.
+    """
+
+    def __init__(
+        self,
+        datasets: list[BaseDataset],
+        sampling_weights: list[float],
+        group_names: list[str] | None = None,
+        embodiment_names: list[str] | None = None,
+        robot_types: list[str] | None = None,
+    ) -> None:
+        super(WeightedConcatDataset, self).__init__(datasets)
+        assert len(sampling_weights) == len(datasets), 'sampling_weights length should match datasets length'
+        self.sampling_weights = [float(w) for w in sampling_weights]
+        assert all(w >= 0 for w in self.sampling_weights), 'sampling_weights should be non-negative'
+        assert sum(self.sampling_weights) > 0, 'sum of sampling_weights should be greater than 0'
+        if group_names is not None:
+            assert len(group_names) == len(datasets), 'group_names length should match datasets length'
+            self.group_names = [str(name) for name in group_names]
+        if embodiment_names is not None:
+            assert len(embodiment_names) == len(datasets), 'embodiment_names length should match datasets length'
+            self.embodiment_names = [str(name) for name in embodiment_names]
+        if robot_types is not None:
+            assert len(robot_types) == len(datasets), 'robot_types length should match datasets length'
+            self.robot_types = [str(name) for name in robot_types]
+
+    @classmethod
+    def load(cls, data_or_config: Any) -> 'WeightedConcatDataset':
+        """Load a weighted concat dataset from config.
+
+        Supported config keys:
+            - ``datasets`` or ``data_or_config_list``: list of child dataset
+              configs/paths.
+            - ``sampling_weights`` or ``weights``: list of sampling weights.
+            - ``group_names``/``embodiment_names``/``robot_types``: optional
+              per-child metadata used by weighted samplers.
+        """
+        config = load_config(data_or_config)
+        data_or_config_list = config.get('datasets', config.get('data_or_config_list', None))
+        sampling_weights = config.get('sampling_weights', config.get('weights', None))
+        group_names = config.get('group_names', None)
+        embodiment_names = config.get('embodiment_names', None)
+        robot_types = config.get('robot_types', None)
+        assert data_or_config_list is not None, 'datasets or data_or_config_list is required'
+        assert sampling_weights is not None, 'sampling_weights or weights is required'
+
+        data_dir = config.get('data_path', None)
+        resolved_data_or_config_list = []
+        for d in data_or_config_list:
+            if isinstance(d, str) and data_dir is not None:
+                d = get_abs_path(d, data_dir)
+            resolved_data_or_config_list.append(d)
+
+        datasets = [load_dataset(d) for d in resolved_data_or_config_list]
+        return cls(
+            datasets,
+            sampling_weights=sampling_weights,
+            group_names=group_names,
+            embodiment_names=embodiment_names,
+            robot_types=robot_types,
+        )
+
+    def save(self, save_path: str, store_rel_path: bool = True) -> None:
+        """Save weighted concat dataset config to ``config.json``."""
+        if os.path.isdir(save_path):
+            save_config_path = os.path.join(save_path, 'config.json')
+        else:
+            save_config_path = save_path
+            save_path = os.path.dirname(save_config_path)
+
+        dataset_paths = [dataset.config_path for dataset in self.datasets]
+        if store_rel_path:
+            dataset_paths = [get_rel_path(config_path, save_path) if config_path is not None else None for config_path in dataset_paths]
+
+        config = {
+            '_class_name': 'WeightedConcatDataset',
+            'datasets': dataset_paths,
+            'sampling_weights': self.sampling_weights,
+        }
+        if hasattr(self, 'group_names'):
+            config['group_names'] = self.group_names
+        if hasattr(self, 'embodiment_names'):
+            config['embodiment_names'] = self.embodiment_names
+        if hasattr(self, 'robot_types'):
+            config['robot_types'] = self.robot_types
+        utils.save_file(save_config_path, config)

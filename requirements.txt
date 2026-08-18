@@ -2,7 +2,7 @@ beautifulsoup4
 decord
 ftfy
 imageio
-lerobot==0.3.2
+lerobot==0.4.4
 lmdb
 lpips
 opencv-python
