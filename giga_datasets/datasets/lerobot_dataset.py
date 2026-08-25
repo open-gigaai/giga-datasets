@@ -1,3 +1,4 @@
+import contextvars
 import json
 import logging
 import os
@@ -5,11 +6,10 @@ import shutil
 import socket
 import time
 import warnings
-import contextvars
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
-from contextlib import contextmanager
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Callable
@@ -23,17 +23,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 import torchvision
-from filelock import FileLock, Timeout
 from datasets.info import DatasetInfo
 from datasets.naming import filenames_for_dataset_split
 from datasets.table import InMemoryTable
+from filelock import FileLock, Timeout
 from lerobot.datasets.lerobot_dataset import LeRobotDataset as _LeRobotDataset
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata as _OriginalLeRobotDatasetMetadata
-from lerobot.datasets.utils import (
-    embed_images,
-    validate_episode_buffer,
-    validate_frame,
-)
+from lerobot.datasets.utils import embed_images, validate_episode_buffer, validate_frame
 from lerobot.datasets.video_utils import (
     FrameTimestampError,
     decode_video_frames,
@@ -45,7 +41,6 @@ from typing_extensions import override
 
 from .base_dataset import BaseDataset, _get_data_worker_context
 from .dataset import register_dataset
-
 
 TemporalOffsetSpec = int | list[int] | dict[str, int | list[int]]
 VideoKeySpec = str | Sequence[str]
@@ -204,11 +199,7 @@ def _is_hf_parquet_cache_read_error(error: BaseException) -> bool:
         visited.add(id(current))
 
         message = str(current)
-        if (
-            '.incomplete' in message
-            and '-of-NNNNN.arrow' in message
-            and ('No such file or directory' in message or 'Errno 2' in message)
-        ):
+        if '.incomplete' in message and '-of-NNNNN.arrow' in message and ('No such file or directory' in message or 'Errno 2' in message):
             return True
         if (
             '.arrow' in message
@@ -284,8 +275,7 @@ def _clear_hf_parquet_builder_cache(builder_cache_dir: str | None) -> bool:
             return cleared
     except Timeout:
         logging.warning(
-            f'Timed out after {timeout_s}s waiting to repair HF parquet cache {builder_cache_dir}; '
-            'another process may still be building it.'
+            f'Timed out after {timeout_s}s waiting to repair HF parquet cache {builder_cache_dir}; ' 'another process may still be building it.'
         )
         return False
 
@@ -369,12 +359,7 @@ def _normalize_mode(value: str, *, allowed: set[str], arg_name: str) -> str:
 
 def _iter_lerobot_chunk_parquet_files(root: Path, relative_dir: str | Path) -> list[Path]:
     base_dir = root / relative_dir
-    paths = [
-        path
-        for path in base_dir.glob('chunk-*/*.parquet')
-        if path.name.startswith('file-')
-        and path.stem.removeprefix('file-').isdigit()
-    ]
+    paths = [path for path in base_dir.glob('chunk-*/*.parquet') if path.name.startswith('file-') and path.stem.removeprefix('file-').isdigit()]
     return sorted(paths)
 
 
@@ -596,9 +581,7 @@ def _build_absolute_to_relative_index_from_episodes(
     root: str | Path,
     episodes: Sequence[int],
 ) -> _EpisodeAbsoluteToRelativeIndex:
-    full_ranges = _normalize_lerobot_episode_frame_ranges(
-        _load_lerobot_episode_frame_ranges_no_hf_cache(Path(root))
-    )
+    full_ranges = _normalize_lerobot_episode_frame_ranges(_load_lerobot_episode_frame_ranges_no_hf_cache(Path(root)))
     selected_ranges = sorted(full_ranges[int(episode_id)] for episode_id in episodes)
     relative_start = 0
     index_ranges: list[tuple[int, int, int]] = []
@@ -619,8 +602,8 @@ def _load_lerobot_hf_parquet_dataset(
     decode_video_keys: VideoKeySpec | None,
     data_columns: DataColumnSpec,
 ) -> datasets.Dataset:
-    from lerobot.datasets.utils import get_hf_features_from_features
     from datasets.io.parquet import ParquetDatasetReader
+    from lerobot.datasets.utils import get_hf_features_from_features
     from pyarrow import dataset as pa_ds
 
     root = Path(root)
@@ -632,18 +615,12 @@ def _load_lerobot_hf_parquet_dataset(
         decode_video_keys=decode_video_keys,
         data_columns=data_columns,
     )
-    selected_columns = list(full_features) if resolved_columns is None else [
-        key for key in resolved_columns if key in full_features
-    ]
+    selected_columns = list(full_features) if resolved_columns is None else [key for key in resolved_columns if key in full_features]
     missing_delta_columns = [
-        key
-        for key in (delta_timestamps or {})
-        if _get_feature_dtype(features_info, key) != 'video' and key not in selected_columns
+        key for key in (delta_timestamps or {}) if _get_feature_dtype(features_info, key) != 'video' and key not in selected_columns
     ]
     if missing_delta_columns:
-        raise KeyError(
-            f'delta_timestamps requires parquet columns missing from selected data columns: {missing_delta_columns}'
-        )
+        raise KeyError(f'delta_timestamps requires parquet columns missing from selected data columns: {missing_delta_columns}')
     features = datasets.Features({key: full_features[key] for key in selected_columns})
     paths = _iter_lerobot_chunk_parquet_files(root, 'data')
     if len(paths) == 0:
@@ -698,18 +675,30 @@ def _load_lerobot_hf_parquet_dataset(
                 if not is_recoverable_cache_error:
                     raise
                 if attempt + 1 == attempts:
-                    raise RuntimeError(
-                        'HF parquet cache remained missing or truncated after '
-                        f'{attempts} attempts: '
-                        f'{_format_lerobot_context(root, repo_id=repo_id, episodes=episodes, cache_dir=cache_dir, builder_cache_dir=builder_cache_dir, parquet_count=len(parquet_paths))}'
-                    ) from error
+                    lerobot_context = _format_lerobot_context(
+                        root,
+                        repo_id=repo_id,
+                        episodes=episodes,
+                        cache_dir=cache_dir,
+                        builder_cache_dir=builder_cache_dir,
+                        parquet_count=len(parquet_paths),
+                    )
+                    raise RuntimeError(f'HF parquet cache remained missing or truncated after {attempts} attempts: {lerobot_context}') from error
                 cleared_cache = _clear_hf_parquet_builder_cache(builder_cache_dir)
                 delay_s = min(2.0, 0.2 * (2**attempt))
+                lerobot_context = _format_lerobot_context(
+                    root,
+                    repo_id=repo_id,
+                    episodes=episodes,
+                    cache_dir=cache_dir,
+                    builder_cache_dir=builder_cache_dir,
+                    parquet_count=len(parquet_paths),
+                )
                 logging.warning(
                     'HF parquet cache is missing or truncated; '
                     f'{"cleared" if cleared_cache else "kept"} {builder_cache_dir} and retrying in {delay_s:.1f}s '
                     f'({attempt + 1}/{attempts}). '
-                    f'{_format_lerobot_context(root, repo_id=repo_id, episodes=episodes, cache_dir=cache_dir, builder_cache_dir=builder_cache_dir, parquet_count=len(parquet_paths))}'
+                    f'{lerobot_context}'
                 )
                 time.sleep(delay_s)
         raise RuntimeError('Unreachable HF parquet cache retry state.')
@@ -720,9 +709,7 @@ def _load_lerobot_hf_parquet_dataset(
             return read_from_reader(reader)
 
         lock_path = (
-            f'{builder_cache_dir}_giga_lerobot.lock'
-            if builder_cache_dir is not None
-            else str(Path(cache_dir) / 'giga_lerobot_from_parquet.lock')
+            f'{builder_cache_dir}_giga_lerobot.lock' if builder_cache_dir is not None else str(Path(cache_dir) / 'giga_lerobot_from_parquet.lock')
         )
         Path(lock_path).parent.mkdir(parents=True, exist_ok=True)
         with FileLock(lock_path):
@@ -735,13 +722,7 @@ def _load_lerobot_hf_parquet_dataset(
 
 class _LeRobotDatasetMetadata(_OriginalLeRobotDatasetMetadata):
     def load_metadata(self):
-        from lerobot.datasets.utils import (
-            check_version_compatibility,
-            load_info,
-            load_stats,
-            load_subtasks,
-            load_tasks,
-        )
+        from lerobot.datasets.utils import check_version_compatibility, load_info, load_stats, load_subtasks, load_tasks
 
         self.info = load_info(self.root)
         check_version_compatibility(self.repo_id, self._version, _lerobot_dataset_module.CODEBASE_VERSION)
@@ -860,37 +841,27 @@ def _normalize_delta_offsets(delta_name: str, delta_spec: TemporalOffsetSpec) ->
         offsets: list[int] = []
         for offset in delta_spec:
             if not _is_valid_int(offset):
-                raise TypeError(
-                    f"delta_info['{delta_name}'] offsets must be integers, got {type(offset).__name__}."
-                )
+                raise TypeError(f"delta_info['{delta_name}'] offsets must be integers, got {type(offset).__name__}.")
             offsets.append(offset)
         return offsets
 
     if not isinstance(delta_spec, Mapping):
-        raise TypeError(
-            f"delta_info['{delta_name}'] must be an int, a list[int], or a dict, got {type(delta_spec).__name__}."
-        )
+        raise TypeError(f"delta_info['{delta_name}'] must be an int, a list[int], or a dict, got {type(delta_spec).__name__}.")
 
     has_offsets = 'offsets' in delta_spec
     has_window = any(key in delta_spec for key in ('start', 'stop', 'stride'))
     if has_offsets and has_window:
-        raise ValueError(
-            f"delta_info['{delta_name}'] cannot mix 'offsets' with 'start'/'stop'/'stride'."
-        )
+        raise ValueError(f"delta_info['{delta_name}'] cannot mix 'offsets' with 'start'/'stop'/'stride'.")
 
     if has_offsets:
         unknown_keys = set(delta_spec) - {'offsets'}
         if unknown_keys:
-            raise ValueError(
-                f"delta_info['{delta_name}'] has unsupported keys for offsets mode: {sorted(unknown_keys)}."
-            )
+            raise ValueError(f"delta_info['{delta_name}'] has unsupported keys for offsets mode: {sorted(unknown_keys)}.")
         return _normalize_delta_offsets(delta_name, delta_spec['offsets'])
 
     unknown_keys = set(delta_spec) - {'start', 'stop', 'stride'}
     if unknown_keys:
-        raise ValueError(
-            f"delta_info['{delta_name}'] has unsupported keys for range mode: {sorted(unknown_keys)}."
-        )
+        raise ValueError(f"delta_info['{delta_name}'] has unsupported keys for range mode: {sorted(unknown_keys)}.")
     if 'start' not in delta_spec or 'stop' not in delta_spec:
         raise ValueError(f"delta_info['{delta_name}'] range mode requires both 'start' and 'stop'.")
 
@@ -898,9 +869,7 @@ def _normalize_delta_offsets(delta_name: str, delta_spec: TemporalOffsetSpec) ->
     stop = delta_spec['stop']
     stride = delta_spec.get('stride', 1)
     if not _is_valid_int(start) or not _is_valid_int(stop) or not _is_valid_int(stride):
-        raise TypeError(
-            f"delta_info['{delta_name}'] range mode expects integer 'start', 'stop', and 'stride'."
-        )
+        raise TypeError(f"delta_info['{delta_name}'] range mode expects integer 'start', 'stop', and 'stride'.")
     if stride <= 0:
         raise ValueError(f"delta_info['{delta_name}'] stride must be a positive integer.")
     return list(range(start, stop, stride))
@@ -1099,8 +1068,8 @@ def _decode_video_frames_pyav_streaming(
 ) -> torch.Tensor:
     """Decode timestamps with bounded CPU working set for the pyav backend.
 
-    Unlike torchvision's default implementation, this keeps at most the previous
-    and current decoded frames while scanning forward from the nearest keyframe.
+    Unlike torchvision's default implementation, this keeps at most the previous and current decoded frames while scanning forward from the nearest
+    keyframe.
     """
     if not timestamps:
         raise ValueError('timestamps must not be empty.')
@@ -1181,8 +1150,7 @@ def _decode_video_frames_pyav_streaming(
 
     if len(timestamps) != len(closest_frames):
         raise FrameTimestampError(
-            f'Number of retrieved frames ({len(closest_frames)}) does not match '
-            f'number of queried timestamps ({len(timestamps)})'
+            f'Number of retrieved frames ({len(closest_frames)}) does not match ' f'number of queried timestamps ({len(timestamps)})'
         )
     return closest_frames
 
@@ -1196,8 +1164,8 @@ class BoundedVideoDecoderCache:
         self._lock = Lock()
 
     def get_decoder(self, video_path: str):
-        from torchcodec.decoders import VideoDecoder
         import fsspec
+        from torchcodec.decoders import VideoDecoder
 
         video_path = str(video_path)
         with self._lock:
@@ -1302,14 +1270,10 @@ class LeRobotDataset(BaseDataset):
             return self._episode_frame_ranges
 
         root = Path(self.data_path)
-        full_ranges = _normalize_lerobot_episode_frame_ranges(
-            _load_lerobot_episode_frame_ranges_no_hf_cache(root)
-        )
+        full_ranges = _normalize_lerobot_episode_frame_ranges(_load_lerobot_episode_frame_ranges_no_hf_cache(root))
         episodes = self.kwargs.get('episodes')
         if episodes is None:
-            self._episode_frame_ranges = [
-                (start, end, episode_idx) for episode_idx, (start, end) in enumerate(full_ranges)
-            ]
+            self._episode_frame_ranges = [(start, end, episode_idx) for episode_idx, (start, end) in enumerate(full_ranges)]
             return self._episode_frame_ranges
 
         selected_ranges: list[tuple[int, int, int]] = []
@@ -1364,9 +1328,7 @@ class LeRobotDataset(BaseDataset):
         if self._hf_cache_index_ranges is None:
             return index
         if self._hf_cache_index_range_ends is None:
-            self._hf_cache_index_range_ends = [
-                range_end for _range_start, range_end, _subset_start in self._hf_cache_index_ranges
-            ]
+            self._hf_cache_index_range_ends = [range_end for _range_start, range_end, _subset_start in self._hf_cache_index_ranges]
         range_idx = bisect_right(self._hf_cache_index_range_ends, index)
         if range_idx < len(self._hf_cache_index_ranges):
             range_start, range_end, subset_start = self._hf_cache_index_ranges[range_idx]
@@ -1515,8 +1477,7 @@ class LeRobotDataset(BaseDataset):
             return data_dict
         except Exception as error:
             raise RuntimeError(
-                'Failed to fetch LeRobot dataset sample: '
-                f'data_path={self.data_path!r}, index={index!r}, {_get_data_worker_context()}'
+                'Failed to fetch LeRobot dataset sample: ' f'data_path={self.data_path!r}, index={index!r}, {_get_data_worker_context()}'
             ) from error
 
     def _get_data(self, index: int) -> dict:
@@ -2039,10 +2000,7 @@ class FastLeRobotDataset(_LeRobotDataset):
                     _walk(mapping, dst_path)
                     continue
                 if not isinstance(mapping, str):
-                    raise TypeError(
-                        f'Invalid repack_transform leaf type for key {dst_path}. '
-                        f'Expected str or dict, got {type(mapping).__name__}.'
-                    )
+                    raise TypeError(f'Invalid repack_transform leaf type for key {dst_path}. ' f'Expected str or dict, got {type(mapping).__name__}.')
                 assignments.append((dst_path, mapping))
 
         _walk(repack_transform)
@@ -2075,12 +2033,11 @@ class FastLeRobotDataset(_LeRobotDataset):
         return tuple(assignments)
 
     def _warn_repack_miss(self, src_key: str, dst_key: str) -> None:
-        """Log once per (src, dst) pair that the configured source key is absent.
+        """Log once per (src, dst) pair that the configured source key is
+        absent.
 
-        Dataset groups in giga-brain configs share a single repack_transform,
-        but individual paths may legitimately lack some optional cameras. We
-        skip those mappings silently for training, but emit a single warning
-        per dataset instance + key pair so the path can be located.
+        Dataset groups in giga-brain configs share a single repack_transform, but individual paths may legitimately lack some optional cameras. We
+        skip those mappings silently for training, but emit a single warning per dataset instance + key pair so the path can be located.
         """
         if src_key.endswith('_is_pad') or dst_key.endswith('_is_pad'):
             # Auto-derived pad pairs follow their parent; warning on the parent

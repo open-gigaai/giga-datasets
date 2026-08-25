@@ -86,14 +86,14 @@ if __name__ == '__main__':
 
     setup(
         name='giga-datasets',
-        version='1.0.0',
+        version='1.1.0',
         author='GigaAI',
         url='https://github.com/open-gigaai/giga-datasets',
         description='GigaDatasets: A Unified and Lightweight Framework for Data Curation, Evaluation and Visualization',
         long_description=long_description,
         long_description_content_type='text/markdown',
         license='Apache-2.0',
-        packages=find_namespace_packages(exclude=('scripts*',)),
+        packages=find_namespace_packages(include=('giga_datasets', 'giga_datasets.*')),
         include_package_data=True,
         install_requires=parse_requirements(),
         python_requires='>=3.11',

@@ -59,9 +59,7 @@ class WorkerRangeDataset(BaseDataset):
         if mode not in ('whole', 'per_child'):
             raise ValueError("mode should be either 'whole' or 'per_child'")
         self.mode = mode
-        self.sub_dataset_ranges = None if sub_dataset_ranges is None else [
-            (int(start), int(end)) for start, end in sub_dataset_ranges
-        ]
+        self.sub_dataset_ranges = None if sub_dataset_ranges is None else [(int(start), int(end)) for start, end in sub_dataset_ranges]
 
     @classmethod
     def load(cls, data_or_config: Any) -> 'WorkerRangeDataset':
@@ -141,9 +139,7 @@ class WorkerRangeDataset(BaseDataset):
         if process_shard_size <= 0:
             raise ValueError('process_shard_size should be greater than 0')
         if num_processes % process_shard_size != 0:
-            raise ValueError(
-                f'num_processes should be divisible by process_shard_size, got {num_processes} and {process_shard_size}'
-            )
+            raise ValueError(f'num_processes should be divisible by process_shard_size, got {num_processes} and {process_shard_size}')
 
         shard_world_size = self.shard_world_size
         if shard_world_size is None:
@@ -152,9 +148,7 @@ class WorkerRangeDataset(BaseDataset):
         if shard_world_size <= 0:
             raise ValueError('shard_world_size should be greater than 0')
         if num_processes % shard_world_size != 0:
-            raise ValueError(
-                f'num_processes should be divisible by shard_world_size, got {num_processes} and {shard_world_size}'
-            )
+            raise ValueError(f'num_processes should be divisible by shard_world_size, got {num_processes} and {shard_world_size}')
 
         shard_rank = self.shard_rank
         if shard_rank is None:
@@ -252,18 +246,14 @@ class WorkerRangeDataset(BaseDataset):
             cumulative_sizes.append(total_size)
 
         if len(cumulative_sizes) != len(children):
-            raise ValueError(
-                'concat cumulative size count should match child dataset count, '
-                f'got {len(cumulative_sizes)} and {len(children)}'
-            )
+            raise ValueError('concat cumulative size count should match child dataset count, ' f'got {len(cumulative_sizes)} and {len(children)}')
         return children, cumulative_sizes
 
     def _per_child_base_ranges(self, children: list[Any], cumulative_sizes: list[int]) -> list[tuple[int, int]]:
         if self.sub_dataset_ranges is not None:
             if len(self.sub_dataset_ranges) != len(children):
                 raise ValueError(
-                    'sub_dataset_ranges length should match number of child datasets, '
-                    f'got {len(self.sub_dataset_ranges)} and {len(children)}'
+                    'sub_dataset_ranges length should match number of child datasets, ' f'got {len(self.sub_dataset_ranges)} and {len(children)}'
                 )
             ranges = self.sub_dataset_ranges
         else:
@@ -283,10 +273,7 @@ class WorkerRangeDataset(BaseDataset):
         for child_index, ((start, end), child) in enumerate(zip(ranges, children)):
             child_length = len(child)
             if start < 0 or end < start or end > child_length:
-                raise ValueError(
-                    f'invalid sub_dataset_ranges[{child_index}]={(start, end)}, '
-                    f'expected 0 <= start <= end <= {child_length}'
-                )
+                raise ValueError(f'invalid sub_dataset_ranges[{child_index}]={(start, end)}, ' f'expected 0 <= start <= end <= {child_length}')
             validated_ranges.append((start, end))
         return validated_ranges
 

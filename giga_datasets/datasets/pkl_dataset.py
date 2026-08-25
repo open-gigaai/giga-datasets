@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import Any
 
 from .. import utils
@@ -40,7 +41,8 @@ class PklDataset(BaseDataset):
         if copy_data:
             if self.data_list is None:
                 os.makedirs(save_path, exist_ok=True)
-                os.system('cp -r {}/*.pkl {}'.format(self.data_path, save_path))
+                for data_file in Path(self.data_path).glob('*.pkl'):
+                    shutil.copy2(data_file, save_path)
             else:
                 assert self.data_size == len(self.data_list)
                 config['data_size'] = self.data_size

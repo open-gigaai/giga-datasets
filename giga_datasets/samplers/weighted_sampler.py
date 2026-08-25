@@ -8,15 +8,23 @@ from ..datasets import ConcatDataset
 
 
 class WeightedSampler(Sampler):
-    """A weighted sampler for `ConcatDataset` that rebalances data from different sources.
+    """A weighted sampler for `ConcatDataset` that rebalances data from
+    different sources.
 
-    This sampler adjusts the number of samples from each sub-dataset based on a weight
-    calculated as `size ** exponent`. The total number of samples remains the same as the
-    original dataset. Sub-datasets can be over-sampled (with replacement) or under-sampled
-    (without replacement) depending on their calculated weight.
+    This sampler adjusts the number of samples from each sub-dataset based on a weight calculated as `size ** exponent`. The total number of samples
+    remains the same as the original dataset. Sub-datasets can be over-sampled (with replacement) or under-sampled (without replacement) depending on
+    their calculated weight.
     """
 
-    def __init__(self, dataset: ConcatDataset, batch_size: int | None = None, shuffle: bool = True, infinite: bool = True, seed: int = 6666, weighting_exponent: float = 0.43):
+    def __init__(
+        self,
+        dataset: ConcatDataset,
+        batch_size: int | None = None,
+        shuffle: bool = True,
+        infinite: bool = True,
+        seed: int = 6666,
+        weighting_exponent: float = 0.43,
+    ):
         """Initialize the sampler.
 
         Args:

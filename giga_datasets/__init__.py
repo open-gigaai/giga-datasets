@@ -1,4 +1,4 @@
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 
 def _preload_torchcodec_decoder_before_decord() -> None:

@@ -14,7 +14,6 @@ from .base_dataset import BaseDataset
 from .dataset import register_dataset
 from .lerobot_dataset import _decode_video_frames_pyav_streaming
 
-
 _VQA_ANNOTATION_NAME = 'vqa_llava_json.jsonl'
 
 
@@ -41,7 +40,8 @@ class _LeRobotVQARootInfo:
 
 @register_dataset
 class LeRobotVQADataset(BaseDataset):
-    """Single-QA VQA dataset backed by LeRobot videos and ``meta/vqa_llava_json.jsonl``.
+    """Single-QA VQA dataset backed by LeRobot videos and
+    ``meta/vqa_llava_json.jsonl``.
 
     This dataset intentionally does not instantiate :class:`LeRobotDataset`, so
     it avoids HuggingFace/parquet frame cache construction. It only reads
@@ -229,7 +229,7 @@ class LeRobotVQADataset(BaseDataset):
             candidate = stripped.lstrip()
             for token in image_tokens:
                 if token and candidate.startswith(token):
-                    stripped = candidate[len(token):].lstrip()
+                    stripped = candidate[len(token) :].lstrip()
                     changed = True
                     break
 
@@ -237,17 +237,14 @@ class LeRobotVQADataset(BaseDataset):
 
     def _extract_qa_pairs(self, conversations: Any, ann_path: Path, episode_index: int, frame_index: int) -> list[tuple[str, str]]:
         if not isinstance(conversations, list):
-            raise TypeError(
-                f'conversations should be a list in {ann_path}, episode_index={episode_index}, frame_index={frame_index}'
-            )
+            raise TypeError(f'conversations should be a list in {ann_path}, episode_index={episode_index}, frame_index={frame_index}')
 
         qa_pairs: list[tuple[str, str]] = []
         pending_question: str | None = None
         for message in conversations:
             if not isinstance(message, dict):
                 raise TypeError(
-                    f'Each conversation message should be a dict in {ann_path}, '
-                    f'episode_index={episode_index}, frame_index={frame_index}'
+                    f'Each conversation message should be a dict in {ann_path}, ' f'episode_index={episode_index}, frame_index={frame_index}'
                 )
 
             role = str(message.get('from', message.get('role', ''))).strip().lower()
@@ -269,9 +266,7 @@ class LeRobotVQADataset(BaseDataset):
                 pending_question = None
 
         if pending_question is not None:
-            raise ValueError(
-                f'Found unmatched human question in {ann_path}, episode_index={episode_index}, frame_index={frame_index}'
-            )
+            raise ValueError(f'Found unmatched human question in {ann_path}, episode_index={episode_index}, frame_index={frame_index}')
         if len(qa_pairs) == 0:
             raise ValueError(f'No QA pairs found in {ann_path}, episode_index={episode_index}, frame_index={frame_index}')
         return qa_pairs
@@ -281,11 +276,7 @@ class LeRobotVQADataset(BaseDataset):
             raise FileNotFoundError(f'LeRobot root not found: {root}')
 
         info = self._load_info(root)
-        video_keys = {
-            key
-            for key, feature in info['features'].items()
-            if isinstance(feature, dict) and feature.get('dtype') == 'video'
-        }
+        video_keys = {key for key, feature in info['features'].items() if isinstance(feature, dict) and feature.get('dtype') == 'video'}
         if len(video_keys) == 0:
             raise ValueError(f'No video features found in {root / "meta" / "info.json"}')
 
@@ -452,10 +443,7 @@ class LeRobotVQADataset(BaseDataset):
             self.open()
         sample = self.samples[index]
         root_info = self.root_infos[sample.root_index]
-        sample_id = (
-            f'{sample.root_index}:{sample.episode_index}:{sample.frame_index}:'
-            f'{sample.camera}:{sample.qa_index}'
-        )
+        sample_id = f'{sample.root_index}:{sample.episode_index}:{sample.frame_index}:' f'{sample.camera}:{sample.qa_index}'
 
         data_dict: dict[str, Any] = {
             'data_index': index,

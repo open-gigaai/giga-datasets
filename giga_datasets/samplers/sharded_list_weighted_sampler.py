@@ -99,10 +99,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
 
         self.shard_mode = str(shard_mode)
         if self.shard_mode not in {'global_range', 'per_dataset', 'group_balanced'}:
-            raise ValueError(
-                'shard_mode should be one of "global_range", "per_dataset" or "group_balanced", '
-                f'got {self.shard_mode!r}'
-            )
+            raise ValueError('shard_mode should be one of "global_range", "per_dataset" or "group_balanced", ' f'got {self.shard_mode!r}')
         resolved_embodiment_scaling_scope = _normalize_embodiment_scaling_scope(embodiment_scaling_scope)
 
         if process_batch_size is None and batch_size is not None:
@@ -166,11 +163,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
                 full_ranges,
                 float(embodiment_scaling_exponent),
                 embodiment_scaling_group_names,
-                (
-                    None
-                    if embodiment_scaling_dataset_indices is None
-                    else {int(index) for index in embodiment_scaling_dataset_indices}
-                ),
+                (None if embodiment_scaling_dataset_indices is None else {int(index) for index in embodiment_scaling_dataset_indices}),
                 embodiment_scaling_balance_robot_types,
             )
             full_coarse_group_scaled_weights, _, _ = _apply_coarse_group_embodiment_scaling_plan(
@@ -342,9 +335,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
     @staticmethod
     def _infer_process_shard_size(num_processes: int, shard_world_size: int) -> int:
         if num_processes % shard_world_size != 0:
-            raise ValueError(
-                f'num_processes should be divisible by shard_world_size, got {num_processes} and {shard_world_size}'
-            )
+            raise ValueError(f'num_processes should be divisible by shard_world_size, got {num_processes} and {shard_world_size}')
         return num_processes // shard_world_size
 
     @staticmethod
@@ -356,9 +347,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         if process_shard_size <= 0:
             raise ValueError('process_shard_size should be greater than 0')
         if num_processes % process_shard_size != 0:
-            raise ValueError(
-                f'num_processes should be divisible by process_shard_size, got {num_processes} and {process_shard_size}'
-            )
+            raise ValueError(f'num_processes should be divisible by process_shard_size, got {num_processes} and {process_shard_size}')
         return num_processes // process_shard_size
 
     @staticmethod
@@ -393,10 +382,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         world_size: int,
         rank: int,
     ) -> list[tuple[int, int]]:
-        return [
-            ShardedListWeightedSampler._split_range(length, world_size, rank)
-            for length in sub_dataset_lengths
-        ]
+        return [ShardedListWeightedSampler._split_range(length, world_size, rank) for length in sub_dataset_lengths]
 
     @staticmethod
     def _per_dataset_embodiment_to_sub_dataset_ranges(
@@ -406,11 +392,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         rank: int,
         embodiment_scaling_dataset_indices: list[int] | tuple[int, ...] | None,
     ) -> tuple[list[tuple[int, int]], list[list[tuple[int, int, str]] | None]]:
-        requested_indices = (
-            None
-            if embodiment_scaling_dataset_indices is None
-            else {int(index) for index in embodiment_scaling_dataset_indices}
-        )
+        requested_indices = None if embodiment_scaling_dataset_indices is None else {int(index) for index in embodiment_scaling_dataset_indices}
         ranges = ShardedListWeightedSampler._per_dataset_to_sub_dataset_ranges(
             sub_dataset_lengths,
             world_size,
@@ -423,10 +405,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
                 continue
             if not isinstance(child, ConcatDataset):
                 if requested_indices is not None:
-                    raise ValueError(
-                        f'embodiment scaling requested for child dataset {dataset_index}, '
-                        f'but it is not a ConcatDataset'
-                    )
+                    raise ValueError(f'embodiment scaling requested for child dataset {dataset_index}, ' f'but it is not a ConcatDataset')
                 continue
 
             embodiment_names = _resolve_child_embodiment_names(child)
@@ -448,11 +427,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
                     selected_ranges.append((cursor + inner_start, cursor + inner_end, embodiment_name))
                 cursor += inner_length
 
-            positive_embodiments = {
-                name
-                for start, end, name in selected_ranges
-                if end > start
-            }
+            positive_embodiments = {name for start, end, name in selected_ranges if end > start}
             if len(positive_embodiments) <= 1:
                 if requested_indices is not None:
                     raise ValueError(f'child dataset {dataset_index} does not contain multiple embodiments in its sampled range')
@@ -462,8 +437,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
             child_range_end = max(end for _, end, _ in selected_ranges)
             ranges[dataset_index] = (child_range_start, child_range_end)
             inner_ranges_by_dataset[dataset_index] = [
-                (start - child_range_start, end - child_range_start, name)
-                for start, end, name in selected_ranges
+                (start - child_range_start, end - child_range_start, name) for start, end, name in selected_ranges
             ]
 
         return ranges, inner_ranges_by_dataset
@@ -482,10 +456,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         if group_names is None:
             raise ValueError('shard_mode="group_balanced" requires shard_group_names or dataset.group_names')
         if len(group_names) != len(dataset.datasets):
-            raise ValueError(
-                'shard group name count should match number of child datasets, '
-                f'got {len(group_names)} and {len(dataset.datasets)}'
-            )
+            raise ValueError('shard group name count should match number of child datasets, ' f'got {len(group_names)} and {len(dataset.datasets)}')
         return [ShardedListWeightedSampler._coarse_group_name(str(name)) for name in group_names]
 
     @staticmethod
@@ -525,10 +496,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         total_weight = sum(max(float(weights[i]), 0.0) for i in child_indices)
         if total_weight <= 0:
             start, end = ShardedListWeightedSampler._split_range(len(child_indices), world_size, rank)
-            return [
-                (child_index, 0.0, 0.0, 1.0)
-                for child_index in child_indices[start:end]
-            ]
+            return [(child_index, 0.0, 0.0, 1.0) for child_index in child_indices[start:end]]
 
         target_start = total_weight * rank / world_size
         target_end = total_weight * (rank + 1) / world_size
@@ -616,10 +584,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
                 )
                 selected = [child_index for child_index, _, _, _ in split_assignments]
                 use_child_range_split = False
-                selected_weights = {
-                    child_index: overlap_weight
-                    for child_index, overlap_weight, _, _ in split_assignments
-                }
+                selected_weights = {child_index: overlap_weight for child_index, overlap_weight, _, _ in split_assignments}
                 selected_ranges = {
                     child_index: ShardedListWeightedSampler._relative_range_to_child_range(
                         int(sub_dataset_lengths[child_index]),
@@ -649,8 +614,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
             return self.consumed_total_size
         if self.consumed_total_size % self.process_batch_size != 0:
             raise ValueError(
-                'consumed_total_size should be divisible by process_batch_size, '
-                f'got {self.consumed_total_size} and {self.process_batch_size}'
+                'consumed_total_size should be divisible by process_batch_size, ' f'got {self.consumed_total_size} and {self.process_batch_size}'
             )
         consumed_batches = self.consumed_total_size // self.process_batch_size
         process_groups = int(math.ceil(consumed_batches / self.process_shard_size))
@@ -677,7 +641,8 @@ class ShardedListWeightedSampler(ListWeightedSampler):
         shard_process_end = shard_process_start + self.process_shard_size
         process_groups = self.aligned_total_size // (self.num_processes * self.process_batch_size)
         _debug_sampler(
-            'ShardedListWeightedSampler._iter_aligned_indices start shard=%s/%s process_index=%s process_groups=%s aligned_total_size=%s process_batch_size=%s',
+            'ShardedListWeightedSampler._iter_aligned_indices start shard=%s/%s process_index=%s process_groups=%s '
+            'aligned_total_size=%s process_batch_size=%s',
             self.shard_rank,
             self.shard_world_size,
             self.process_index,
@@ -692,8 +657,7 @@ class ShardedListWeightedSampler(ListWeightedSampler):
                     batch = list(itertools.islice(consumed_indices, self.process_batch_size))
                     if len(batch) != self.process_batch_size:
                         raise RuntimeError(
-                            'not enough consumed indices to fill aligned process batches: '
-                            f'expected {self.process_batch_size}, got {len(batch)}'
+                            'not enough consumed indices to fill aligned process batches: ' f'expected {self.process_batch_size}, got {len(batch)}'
                         )
                     yield from batch
                 else:
@@ -712,7 +676,8 @@ class ShardedListWeightedSampler(ListWeightedSampler):
     def __iter__(self) -> Iterator[int]:
         while True:
             _debug_sampler(
-                'ShardedListWeightedSampler.__iter__ epoch_start epoch=%s index_mode=%s ratio_mode=%s consumed_total_size=%s aligned_total_size=%s shard=%s/%s range=[%s,%s)',
+                'ShardedListWeightedSampler.__iter__ epoch_start epoch=%s index_mode=%s ratio_mode=%s consumed_total_size=%s '
+                'aligned_total_size=%s shard=%s/%s range=[%s,%s)',
                 self.epoch,
                 self.index_mode,
                 self.ratio_mode,

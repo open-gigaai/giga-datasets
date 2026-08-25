@@ -231,8 +231,7 @@ class BaseDataset(torch.utils.data.Dataset):
             return data_dict
         except Exception as error:
             raise RuntimeError(
-                'Failed to fetch dataset sample: '
-                f'dataset={_describe_dataset_for_error(self)}, index={index!r}, {_get_data_worker_context()}'
+                'Failed to fetch dataset sample: ' f'dataset={_describe_dataset_for_error(self)}, index={index!r}, {_get_data_worker_context()}'
             ) from error
 
     def _get_data(self, index: int) -> Any:

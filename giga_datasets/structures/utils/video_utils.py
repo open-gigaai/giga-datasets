@@ -1,4 +1,6 @@
 import os
+import subprocess
+import tempfile
 from typing import Any
 
 import imageio
@@ -76,15 +78,16 @@ def add_music_to_video(src_video_path: str, dst_video_path: str, save_video_path
         dst_video_path: Video to which audio will be added.
         save_video_path: Optional output path; default appends '_music'.
     """
-    aud_path = src_video_path[:-4] + '.m4a'
     if save_video_path is None:
         save_video_path = dst_video_path[:-4] + '_music' + dst_video_path[-4:]
-    if os.path.exists(save_video_path):
-        cmd = 'rm -f %s' % save_video_path
-        os.system(cmd)
-    cmd = 'ffmpeg -i %s -vn -y -acodec copy %s' % (src_video_path, aud_path)
-    os.system(cmd)
-    cmd = 'ffmpeg -i %s -i %s -vcodec copy -acodec copy %s' % (dst_video_path, aud_path, save_video_path)
-    os.system(cmd)
-    cmd = 'rm -f %s' % aud_path
-    os.system(cmd)
+    audio_fd, aud_path = tempfile.mkstemp(suffix='.m4a')
+    os.close(audio_fd)
+    try:
+        subprocess.run(['ffmpeg', '-i', src_video_path, '-vn', '-y', '-acodec', 'copy', aud_path], check=True)
+        subprocess.run(
+            ['ffmpeg', '-i', dst_video_path, '-i', aud_path, '-y', '-vcodec', 'copy', '-acodec', 'copy', save_video_path],
+            check=True,
+        )
+    finally:
+        if os.path.exists(aud_path):
+            os.unlink(aud_path)

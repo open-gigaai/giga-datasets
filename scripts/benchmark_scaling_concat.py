@@ -13,7 +13,6 @@ from typing import Any
 
 import numpy as np
 
-
 EXTRA_PYTHONPATHS = [
     '/gpfs/users/wangyunmo/codes/giga-models/projects/vla/giga-brain-0',
     '/gpfs/users/wangyunmo/codes/giga-datasets-v3.0',
@@ -168,18 +167,12 @@ class BisectWeightedConcatDataset(BisectConcatDataset):
 def build_current_tree(lengths_by_group: list[list[int]], sampling_weights: list[float], stats: Stats):
     from giga_datasets import ConcatDataset, WeightedConcatDataset
 
-    groups = [
-        ConcatDataset([CountingLeafDataset(length, stats) for length in group])
-        for group in lengths_by_group
-    ]
+    groups = [ConcatDataset([CountingLeafDataset(length, stats) for length in group]) for group in lengths_by_group]
     return WeightedConcatDataset(groups, sampling_weights=sampling_weights)
 
 
 def build_bisect_tree(lengths_by_group: list[list[int]], sampling_weights: list[float], stats: Stats):
-    groups = [
-        BisectConcatDataset([CountingLeafDataset(length, stats) for length in group])
-        for group in lengths_by_group
-    ]
+    groups = [BisectConcatDataset([CountingLeafDataset(length, stats) for length in group]) for group in lengths_by_group]
     return BisectWeightedConcatDataset(groups, sampling_weights=sampling_weights)
 
 
@@ -255,6 +248,7 @@ def scale_lengths(lengths_by_group: list[list[int]], total_frames: int) -> list[
 
 def time_dataset_reads(dataset: Any, indices: list[int]) -> tuple[float, Stats]:
     stats = Stats()
+
     # Swap fresh stats into leaves so sampler construction does not count.
     def replace_stats(node: Any) -> None:
         if isinstance(node, CountingLeafDataset):

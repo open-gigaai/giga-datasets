@@ -1,9 +1,8 @@
-import io
 import os
 import pickle
-import re
 import shutil
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import lmdb
@@ -18,7 +17,6 @@ from .dataset import register_dataset
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-@register_dataset
 def load_npy_from_stream(stream_: BytesIO) -> np.ndarray:
     """Experimental, may not work!
 
@@ -27,15 +25,10 @@ def load_npy_from_stream(stream_: BytesIO) -> np.ndarray:
     :return: numpy.ndarray
     """
     stream_.seek(0)
-    prefix_ = stream_.read(128)  # first 128 bytes seem to be the metadata
-    dict_string = re.search('\{(.*?)\}', prefix_[1:].decode())[0]  # noqa W605
-    metadata_dict = eval(dict_string)
-
-    array = np.frombuffer(stream_.read(), dtype=metadata_dict['descr']).reshape(metadata_dict['shape'])
-
-    return array
+    return np.load(stream_, allow_pickle=False)
 
 
+@register_dataset
 class LmdbDataset(BaseDataset):
     """LMDB-backed dataset supporting image/video/numpy/dict/raw items."""
 
@@ -76,7 +69,8 @@ class LmdbDataset(BaseDataset):
             config['data_name'] = self.data_name
         if copy_data:
             os.makedirs(save_path, exist_ok=True)
-            os.system('cp -r {}/*.mdb {}'.format(self.data_path, save_path))
+            for data_file in Path(self.data_path).glob('*.mdb'):
+                shutil.copy2(data_file, save_path)
         elif store_rel_path:
             config['data_path'] = get_rel_path(self.data_path)
         else:
@@ -215,7 +209,7 @@ class LmdbWriter:
             assert self.data_type == 'numpy'
         assert isinstance(data, np.ndarray)
         # Serialize ndarray to .npy format in-memory
-        imgByteArr = io.BytesIO()
+        imgByteArr = BytesIO()
         np.save(imgByteArr, data)
         _ = imgByteArr.seek(0)
         self._write(index, imgByteArr.read())

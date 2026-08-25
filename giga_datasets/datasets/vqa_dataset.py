@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from array import array
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -15,9 +16,6 @@ from .. import utils
 from .base_dataset import BaseDataset
 from .dataset import register_dataset
 
-_SHARED_DATASET_PREFIX = '/shared_disk/datasets'
-_LOCAL_DATASET_PREFIX = '/gpfs/dataset/user-private/peng.li/datasets/gigabrain1'
-
 
 class _SkipVQAImageError(RuntimeError):
     pass
@@ -25,7 +23,8 @@ class _SkipVQAImageError(RuntimeError):
 
 @register_dataset
 class VQADataset(BaseDataset):
-    """VQA dataset backed by annotation directories or single ``.json``/``.jsonl`` files."""
+    """VQA dataset backed by annotation directories or single
+    ``.json``/``.jsonl`` files."""
 
     def __init__(
         self,
@@ -52,6 +51,7 @@ class VQADataset(BaseDataset):
         skip_oversized_images: bool = True,
         max_image_pixels: int | None = None,
         max_image_load_retries: int = 32,
+        image_path_prefix_map: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> None:
         super(VQADataset, self).__init__(data_path=data_path, **kwargs)
@@ -77,9 +77,7 @@ class VQADataset(BaseDataset):
         self.jsonl_index_cache_dir = jsonl_index_cache_dir
         self.multi_image_mode = str(multi_image_mode).lower()
         if self.multi_image_mode not in {'error', 'first', 'grid'}:
-            raise ValueError(
-                f'multi_image_mode must be one of error/first/grid, got {multi_image_mode!r}'
-            )
+            raise ValueError(f'multi_image_mode must be one of error/first/grid, got {multi_image_mode!r}')
         if max_image_pixels is None:
             max_image_pixels_env = os.environ.get('GIGA_DATASETS_VQA_MAX_IMAGE_PIXELS', None)
             if max_image_pixels_env is not None and len(max_image_pixels_env) > 0:
@@ -89,6 +87,7 @@ class VQADataset(BaseDataset):
         if self.max_image_pixels is not None and self.max_image_pixels < 1:
             raise ValueError(f'max_image_pixels must be positive, got {self.max_image_pixels}')
         self.max_image_load_retries = int(max_image_load_retries)
+        self.image_path_prefix_map = dict(image_path_prefix_map or {})
         if self.max_image_load_retries < 0:
             raise ValueError(f'max_image_load_retries must be non-negative, got {self.max_image_load_retries}')
 
@@ -171,6 +170,7 @@ class VQADataset(BaseDataset):
             'skip_oversized_images': self.skip_oversized_images,
             'max_image_pixels': self.max_image_pixels,
             'max_image_load_retries': self.max_image_load_retries,
+            'image_path_prefix_map': self.image_path_prefix_map,
         }
         if self.data_path is not None:
             config['data_path'] = get_rel_path(self.data_path, save_dir) if store_rel_path else self.data_path
@@ -338,9 +338,7 @@ class VQADataset(BaseDataset):
         np.save(offsets_tmp_path, offsets_array)
         np.save(qa_indices_tmp_path, qa_indices_array)
         saved_offsets_tmp_path = offsets_tmp_path if offsets_tmp_path.endswith('.npy') else f'{offsets_tmp_path}.npy'
-        saved_qa_indices_tmp_path = (
-            qa_indices_tmp_path if qa_indices_tmp_path.endswith('.npy') else f'{qa_indices_tmp_path}.npy'
-        )
+        saved_qa_indices_tmp_path = qa_indices_tmp_path if qa_indices_tmp_path.endswith('.npy') else f'{qa_indices_tmp_path}.npy'
         os.replace(saved_offsets_tmp_path, offsets_cache_path)
         os.replace(saved_qa_indices_tmp_path, qa_indices_cache_path)
         return np.load(offsets_cache_path, mmap_mode='r'), np.load(qa_indices_cache_path, mmap_mode='r')
@@ -371,17 +369,12 @@ class VQADataset(BaseDataset):
             return 'test'
         return None
 
-    def _resolve_image_path(
-        self, image_path: str | list[str] | None
-    ) -> str | list[str] | None:
+    def _resolve_image_path(self, image_path: str | list[str] | None) -> str | list[str] | None:
         if image_path is None:
             return None
         if isinstance(image_path, list):
             if self.multi_image_mode == 'error':
-                raise TypeError(
-                    'VQA records with multiple images require '
-                    'multi_image_mode="first" or multi_image_mode="grid"'
-                )
+                raise TypeError('VQA records with multiple images require ' 'multi_image_mode="first" or multi_image_mode="grid"')
             return [self._resolve_single_image_path(path) for path in image_path]
         return self._resolve_single_image_path(image_path)
 
@@ -393,8 +386,15 @@ class VQADataset(BaseDataset):
         else:
             resolved_path = os.path.abspath(os.path.join(self._annotation_root(), image_path))
 
-        if resolved_path.startswith(_SHARED_DATASET_PREFIX):
-            resolved_path = _LOCAL_DATASET_PREFIX + resolved_path[len(_SHARED_DATASET_PREFIX) :]
+        for source_prefix, target_prefix in self.image_path_prefix_map.items():
+            source_path = Path(os.path.abspath(os.path.expanduser(source_prefix)))
+            try:
+                relative_path = Path(resolved_path).relative_to(source_path)
+            except ValueError:
+                continue
+            target_path = Path(os.path.abspath(os.path.expanduser(target_prefix)))
+            resolved_path = str(target_path / relative_path)
+            break
 
         if not os.path.exists(resolved_path):
             resolved_path = self._resolve_nested_duplicate_dir_path(resolved_path)
@@ -424,7 +424,8 @@ class VQADataset(BaseDataset):
 
     @staticmethod
     def _resolve_nested_duplicate_dir_path(path: str, max_depth: int = 4) -> str:
-        """Recover mirrored datasets where the last directory name is duplicated.
+        """Recover mirrored datasets where the last directory name is
+        duplicated.
 
         Example:
         ``.../flickr30k-images/100.jpg`` ->
@@ -459,7 +460,7 @@ class VQADataset(BaseDataset):
             candidate = stripped.lstrip()
             for token in image_tokens:
                 if token and candidate.startswith(token):
-                    stripped = candidate[len(token):].lstrip()
+                    stripped = candidate[len(token) :].lstrip()
                     changed = True
                     break
 

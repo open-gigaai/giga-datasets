@@ -1,6 +1,6 @@
 import json
-import math
 import logging
+import math
 import os
 import socket
 import time
@@ -41,18 +41,13 @@ def _is_embodiment_scaling_enabled(
     exponent: float | None,
     balance_robot_types: bool = False,
 ) -> bool:
-    return exponent is not None and (
-        bool(balance_robot_types) or not math.isclose(float(exponent), 1.0)
-    )
+    return exponent is not None and (bool(balance_robot_types) or not math.isclose(float(exponent), 1.0))
 
 
 def _normalize_embodiment_scaling_scope(scope: str | None) -> str:
     scope = 'child' if scope is None else str(scope)
     if scope not in {'child', 'coarse_group'}:
-        raise ValueError(
-            'embodiment_scaling_scope should be either "child" or "coarse_group", '
-            f'got {scope!r}'
-        )
+        raise ValueError('embodiment_scaling_scope should be either "child" or "coarse_group", ' f'got {scope!r}')
     return scope
 
 
@@ -271,17 +266,13 @@ def _build_coarse_group_embodiment_scaling_plan(
 
         inner_ranges = _child_inner_embodiment_ranges(child, start, end)
         if inner_ranges is None:
-            raise ValueError(
-                'cannot infer embodiment names for '
-                f'child dataset {dataset_index} in coarse group {coarse_group!r}'
-            )
+            raise ValueError('cannot infer embodiment names for ' f'child dataset {dataset_index} in coarse group {coarse_group!r}')
         robot_type_ranges = None
         if balance_robot_types:
             robot_type_ranges = _child_inner_robot_type_ranges(child, start, end)
             if robot_type_ranges is None or len(robot_type_ranges) != len(inner_ranges):
                 raise ValueError(
-                    'cannot infer robot types for balanced sampling in '
-                    f'child dataset {dataset_index} in coarse group {coarse_group!r}'
+                    'cannot infer robot types for balanced sampling in ' f'child dataset {dataset_index} in coarse group {coarse_group!r}'
                 )
 
         group_total_weights[coarse_group] = group_total_weights.get(coarse_group, 0.0) + float(weight)
@@ -290,36 +281,21 @@ def _build_coarse_group_embodiment_scaling_plan(
             range_length = range_end - range_start
             if range_length <= 0:
                 continue
-            lengths_by_embodiment[embodiment_name] = (
-                lengths_by_embodiment.get(embodiment_name, 0) + int(range_length)
-            )
+            lengths_by_embodiment[embodiment_name] = lengths_by_embodiment.get(embodiment_name, 0) + int(range_length)
             if balance_robot_types:
                 robot_start, robot_end, robot_type = robot_type_ranges[range_index]
                 if (robot_start, robot_end) != (range_start, range_end):
                     raise ValueError('embodiment and robot-type ranges should be aligned')
-                lengths_by_robot_type = (
-                    lengths_by_group_embodiment_and_robot_type
-                    .setdefault(coarse_group, {})
-                    .setdefault(embodiment_name, {})
-                )
-                lengths_by_robot_type[robot_type] = (
-                    lengths_by_robot_type.get(robot_type, 0) + int(range_length)
-                )
+                lengths_by_robot_type = lengths_by_group_embodiment_and_robot_type.setdefault(coarse_group, {}).setdefault(embodiment_name, {})
+                lengths_by_robot_type[robot_type] = lengths_by_robot_type.get(robot_type, 0) + int(range_length)
 
     density_by_group_and_embodiment: dict[str, dict[Any, float]] = {}
     for group_name, lengths_by_embodiment in lengths_by_group_and_embodiment.items():
-        positive_lengths = {
-            name: length
-            for name, length in lengths_by_embodiment.items()
-            if length > 0
-        }
+        positive_lengths = {name: length for name, length in lengths_by_embodiment.items() if length > 0}
         if not positive_lengths or (len(positive_lengths) == 1 and not balance_robot_types):
             continue
 
-        scaled_totals = {
-            name: length ** float(exponent)
-            for name, length in positive_lengths.items()
-        }
+        scaled_totals = {name: length ** float(exponent) for name, length in positive_lengths.items()}
         scaled_sum = sum(scaled_totals.values())
         group_weight = group_total_weights.get(group_name, 0.0)
         if scaled_sum <= 0 or group_weight <= 0:
@@ -329,24 +305,14 @@ def _build_coarse_group_embodiment_scaling_plan(
             densities = {}
             robot_type_lengths_by_embodiment = lengths_by_group_embodiment_and_robot_type[group_name]
             for name in positive_lengths:
-                positive_robot_types = {
-                    robot_type: length
-                    for robot_type, length in robot_type_lengths_by_embodiment[name].items()
-                    if length > 0
-                }
+                positive_robot_types = {robot_type: length for robot_type, length in robot_type_lengths_by_embodiment[name].items() if length > 0}
                 robot_type_count = len(positive_robot_types)
                 for robot_type, length in positive_robot_types.items():
-                    densities[(name, robot_type)] = (
-                        group_weight
-                        * (scaled_totals[name] / scaled_sum)
-                        / robot_type_count
-                        / length
-                    )
+                    densities[(name, robot_type)] = group_weight * (scaled_totals[name] / scaled_sum) / robot_type_count / length
             density_by_group_and_embodiment[group_name] = densities
         else:
             density_by_group_and_embodiment[group_name] = {
-                name: group_weight * (scaled_totals[name] / scaled_sum) / positive_lengths[name]
-                for name in positive_lengths
+                name: group_weight * (scaled_totals[name] / scaled_sum) / positive_lengths[name] for name in positive_lengths
             }
 
     return {
@@ -378,9 +344,7 @@ def _apply_coarse_group_embodiment_scaling_plan(
     pending_by_group: dict[str, list[tuple[int, list[tuple[int, int, str]], list[float]]]] = {}
     selected_target_totals: dict[str, float] = {}
 
-    for dataset_index, (child, child_range, coarse_group) in enumerate(
-        zip(dataset.datasets, sub_dataset_ranges, coarse_group_names)
-    ):
+    for dataset_index, (child, child_range, coarse_group) in enumerate(zip(dataset.datasets, sub_dataset_ranges, coarse_group_names)):
         densities = density_by_group_and_embodiment.get(coarse_group)
         if not densities:
             continue
@@ -394,17 +358,13 @@ def _apply_coarse_group_embodiment_scaling_plan(
 
         inner_ranges = _child_inner_embodiment_ranges(child, start, end)
         if inner_ranges is None:
-            raise ValueError(
-                'cannot infer embodiment names for '
-                f'child dataset {dataset_index} in coarse group {coarse_group!r}'
-            )
+            raise ValueError('cannot infer embodiment names for ' f'child dataset {dataset_index} in coarse group {coarse_group!r}')
         robot_type_ranges = None
         if balance_robot_types:
             robot_type_ranges = _child_inner_robot_type_ranges(child, start, end)
             if robot_type_ranges is None or len(robot_type_ranges) != len(inner_ranges):
                 raise ValueError(
-                    'cannot infer robot types for balanced sampling in '
-                    f'child dataset {dataset_index} in coarse group {coarse_group!r}'
+                    'cannot infer robot types for balanced sampling in ' f'child dataset {dataset_index} in coarse group {coarse_group!r}'
                 )
 
         target_weights = []
@@ -444,21 +404,12 @@ def _apply_coarse_group_embodiment_scaling_plan(
             }
             positive_range_count = sum(
                 range_end > range_start and target_weight > 0
-                for (range_start, range_end, _), target_weight in zip(
-                    inner_ranges, scaled_target_weights
-                )
+                for (range_start, range_end, _), target_weight in zip(inner_ranges, scaled_target_weights)
             )
-            should_override_inner_probabilities = (
-                positive_range_count > 1
-                if balance_robot_types
-                else len(positive_embodiments) > 1
-            )
+            should_override_inner_probabilities = positive_range_count > 1 if balance_robot_types else len(positive_embodiments) > 1
             if child_target_total > 0 and should_override_inner_probabilities:
                 inner_ranges_by_dataset[dataset_index] = inner_ranges
-                inner_probabilities_by_dataset[dataset_index] = [
-                    weight / child_target_total
-                    for weight in scaled_target_weights
-                ]
+                inner_probabilities_by_dataset[dataset_index] = [weight / child_target_total for weight in scaled_target_weights]
 
     return new_sampling_weights, inner_ranges_by_dataset, inner_probabilities_by_dataset
 
@@ -484,10 +435,7 @@ def _embodiment_scaled_range_probabilities(
             lengths_by_embodiment[name] = 0
         lengths_by_embodiment[name] += int(length)
 
-    scaled_totals = {
-        name: (lengths_by_embodiment[name] ** exponent if lengths_by_embodiment[name] > 0 else 0.0)
-        for name in ordered_embodiments
-    }
+    scaled_totals = {name: (lengths_by_embodiment[name] ** exponent if lengths_by_embodiment[name] > 0 else 0.0) for name in ordered_embodiments}
     scaled_sum = sum(scaled_totals.values())
     if scaled_sum <= 0:
         return [0.0] * len(range_lengths)
@@ -578,26 +526,14 @@ class ListWeightedSampler(Sampler):
         self.embodiment_scaling_exponent = embodiment_scaling_exponent
         self.embodiment_scaling_scope = _normalize_embodiment_scaling_scope(embodiment_scaling_scope)
         self.embodiment_scaling_group_names = (
-            None
-            if embodiment_scaling_group_names is None
-            else [str(name) for name in embodiment_scaling_group_names]
+            None if embodiment_scaling_group_names is None else [str(name) for name in embodiment_scaling_group_names]
         )
         self.embodiment_scaling_dataset_indices = (
-            None
-            if embodiment_scaling_dataset_indices is None
-            else {int(index) for index in embodiment_scaling_dataset_indices}
+            None if embodiment_scaling_dataset_indices is None else {int(index) for index in embodiment_scaling_dataset_indices}
         )
-        self.embodiment_scaling_balance_robot_types = bool(
-            embodiment_scaling_balance_robot_types
-        )
-        if (
-            self.embodiment_scaling_balance_robot_types
-            and self.embodiment_scaling_scope != 'coarse_group'
-        ):
-            raise ValueError(
-                'embodiment_scaling_balance_robot_types is only supported with '
-                'embodiment_scaling_scope="coarse_group"'
-            )
+        self.embodiment_scaling_balance_robot_types = bool(embodiment_scaling_balance_robot_types)
+        if self.embodiment_scaling_balance_robot_types and self.embodiment_scaling_scope != 'coarse_group':
+            raise ValueError('embodiment_scaling_balance_robot_types is only supported with ' 'embodiment_scaling_scope="coarse_group"')
         self._explicit_inner_embodiment_ranges = embodiment_scaling_inner_ranges
         if self._explicit_inner_embodiment_ranges is not None and len(self._explicit_inner_embodiment_ranges) != len(dataset.datasets):
             raise ValueError('embodiment_scaling_inner_ranges length should match number of child datasets')
@@ -611,16 +547,9 @@ class ListWeightedSampler(Sampler):
             if float(self.embodiment_scaling_exponent) < 0:
                 raise ValueError('embodiment_scaling_exponent should be non-negative')
             if self.embodiment_scaling_scope == 'child' and self.embodiment_scaling_group_names is not None:
-                raise ValueError(
-                    'embodiment_scaling_group_names is only supported with '
-                    'embodiment_scaling_scope="coarse_group"'
-                )
+                raise ValueError('embodiment_scaling_group_names is only supported with ' 'embodiment_scaling_scope="coarse_group"')
             if self.embodiment_scaling_dataset_indices is not None:
-                invalid_indices = [
-                    index
-                    for index in self.embodiment_scaling_dataset_indices
-                    if index < 0 or index >= len(dataset.datasets)
-                ]
+                invalid_indices = [index for index in self.embodiment_scaling_dataset_indices if index < 0 or index >= len(dataset.datasets)]
                 if invalid_indices:
                     raise ValueError(f'invalid embodiment_scaling_dataset_indices: {invalid_indices}')
         if any(w < 0 for w in self.sampling_weights):
@@ -639,10 +568,7 @@ class ListWeightedSampler(Sampler):
                 end = int(end)
                 full_length = self.full_sub_dataset_lengths[i]
                 if start < 0 or end < start or end > full_length:
-                    raise ValueError(
-                        f'invalid sub_dataset_ranges[{i}]={(start, end)}, '
-                        f'expected 0 <= start <= end <= {full_length}'
-                    )
+                    raise ValueError(f'invalid sub_dataset_ranges[{i}]={(start, end)}, ' f'expected 0 <= start <= end <= {full_length}')
                 self.sub_dataset_ranges.append((start, end))
             allow_empty_ranges = True
 
@@ -651,14 +577,11 @@ class ListWeightedSampler(Sampler):
         if empty_dataset_indices and not allow_empty_ranges:
             raise ValueError(f'child datasets at indices {empty_dataset_indices} have zero length')
         if allow_empty_ranges:
-            self.sampling_weights = [
-                0.0 if length == 0 else weight for weight, length in zip(self.sampling_weights, self.sub_dataset_lengths)
-            ]
+            self.sampling_weights = [0.0 if length == 0 else weight for weight, length in zip(self.sampling_weights, self.sub_dataset_lengths)]
         self._inner_embodiment_ranges = self._build_inner_embodiment_ranges()
         self._inner_embodiment_probabilities = self._build_inner_embodiment_probabilities()
         has_explicit_coarse_group_plan = (
-            self._explicit_inner_embodiment_ranges is not None
-            and self._explicit_inner_embodiment_probabilities is not None
+            self._explicit_inner_embodiment_ranges is not None and self._explicit_inner_embodiment_probabilities is not None
         )
         if (
             _is_embodiment_scaling_enabled(
@@ -748,10 +671,7 @@ class ListWeightedSampler(Sampler):
                 continue
             if not isinstance(child, ConcatDataset):
                 if self.embodiment_scaling_dataset_indices is not None:
-                    raise ValueError(
-                        f'embodiment scaling requested for child dataset {dataset_index}, '
-                        f'but it is not a ConcatDataset'
-                    )
+                    raise ValueError(f'embodiment scaling requested for child dataset {dataset_index}, ' f'but it is not a ConcatDataset')
                 continue
 
             embodiment_names = _resolve_child_embodiment_names(child)
@@ -772,11 +692,7 @@ class ListWeightedSampler(Sampler):
                     inner_ranges.append((overlap_start - child_start, overlap_end - child_start, embodiment_name))
                 cursor = inner_end
 
-            positive_embodiments = {
-                name
-                for start, end, name in inner_ranges
-                if end > start
-            }
+            positive_embodiments = {name for start, end, name in inner_ranges if end > start}
             if len(positive_embodiments) <= 1:
                 if self.embodiment_scaling_dataset_indices is not None:
                     raise ValueError(f'child dataset {dataset_index} does not contain multiple embodiments in its sampled range')
@@ -800,24 +716,16 @@ class ListWeightedSampler(Sampler):
                 continue
             if inner_ranges is None:
                 raise ValueError(
-                    'embodiment_scaling_inner_probabilities requires matching '
-                    f'embodiment_scaling_inner_ranges for child dataset {dataset_index}'
+                    'embodiment_scaling_inner_probabilities requires matching ' f'embodiment_scaling_inner_ranges for child dataset {dataset_index}'
                 )
             if len(probabilities) != len(inner_ranges):
                 raise ValueError(
-                    'embodiment_scaling_inner_probabilities entries should match '
-                    f'embodiment_scaling_inner_ranges[{dataset_index}] length'
+                    'embodiment_scaling_inner_probabilities entries should match ' f'embodiment_scaling_inner_ranges[{dataset_index}] length'
                 )
             probability_sum = sum(float(probability) for probability in probabilities)
             if probability_sum <= 0:
-                raise ValueError(
-                    f'embodiment_scaling_inner_probabilities[{dataset_index}] '
-                    'should have a positive sum'
-                )
-            probabilities_by_dataset[dataset_index] = [
-                float(probability) / probability_sum
-                for probability in probabilities
-            ]
+                raise ValueError(f'embodiment_scaling_inner_probabilities[{dataset_index}] ' 'should have a positive sum')
+            probabilities_by_dataset[dataset_index] = [float(probability) / probability_sum for probability in probabilities]
         return probabilities_by_dataset
 
     def _sample_uniform_local_indices(self, data_size: int, num_samples: int) -> np.ndarray:
@@ -912,10 +820,7 @@ class ListWeightedSampler(Sampler):
 
     def _build_batch_indices(self) -> np.ndarray:
         num_batches = self.total_size // self.batch_size
-        local_index_pools = [
-            self._sample_local_indices(i, self.num_samples_per_sub_dataset[i])
-            for i in range(len(self.dataset.datasets))
-        ]
+        local_index_pools = [self._sample_local_indices(i, self.num_samples_per_sub_dataset[i]) for i in range(len(self.dataset.datasets))]
         pool_offsets = [0] * len(self.dataset.datasets)
         batches = []
 
